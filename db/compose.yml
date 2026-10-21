@@ -1,0 +1,42 @@
+name: summarizer-db
+
+services:
+  db:
+    image: pgvector/pgvector:pg17
+    container_name: summarizer-postgres
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      PGDATA: /var/lib/postgresql/data/pgdata
+    command:
+      - postgres
+      - -c
+      - hba_file=/etc/postgresql/pg_hba.conf
+      - -c
+      - log_min_duration_statement=500
+      - -c
+      - effective_cache_size=256MB
+      - -c
+      - work_mem=8MB
+      - -c
+      - max_connections=50
+    ports:
+      - "10.0.2.22:5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./initdb:/docker-entrypoint-initdb.d:ro
+      - ./backups:/backups
+      - ./conf/pg_hba.conf:/etc/postgresql/pg_hba.conf:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+volumes:
+  pgdata:
+    name: summarizer_pgdata
