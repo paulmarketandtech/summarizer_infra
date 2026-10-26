@@ -7,4 +7,8 @@ env/
 .env
 .env.local
 
+.terraform/
+*.tfstate
+*.tfstate.*
 *.tfvars
+*.tfvars.json
