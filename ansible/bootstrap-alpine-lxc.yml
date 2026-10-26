@@ -1,0 +1,112 @@
+---
+- name: Bootstrap minimal Alpine LXC
+  hosts: alpine_lxc
+  become: false
+  gather_facts: true
+
+  vars:
+    lxc_user: jumphost
+
+  tasks:
+    - name: Update and upgrade Alpine packages
+      community.general.apk:
+        update_cache: true
+        upgrade: true
+
+    - name: Install base packages
+      community.general.apk:
+        name:
+          - openssh
+          - openrc
+          - bash
+          - bash-completion
+          - shadow
+          - curl
+          - nano
+          - vim
+          - htop
+          - doas
+        state: present
+
+    - name: Ensure wheel group exists
+      ansible.builtin.group:
+        name: wheel
+        state: present
+
+    - name: Create LXC user
+      ansible.builtin.user:
+        name: "{{ lxc_user }}"
+        shell: /bin/bash
+        groups: wheel
+        append: true
+        create_home: true
+        state: present
+
+    - name: Create doas configuration directory
+      ansible.builtin.file:
+        path: /etc/doas.d
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Allow wheel group to use doas with persist
+      ansible.builtin.copy:
+        dest: /etc/doas.d/20-wheel.conf
+        content: "permit persist :wheel\npermit nopass :wheel\n"
+        owner: root
+        group: root
+        mode: "0640"
+
+    - name: Test doas is working by updating cache
+      ansible.builtin.command: doas apk update
+      register: doas_test
+      changed_when: false
+
+    - name: Deploy custom .bashrc for LXC user
+      ansible.builtin.blockinfile:
+        path: "/home/{{ lxc_user }}/.bashrc"
+        owner: "{{ lxc_user }}"
+        group: "{{ lxc_user }}"
+        mode: "0644"
+        create: true
+        block: |
+          # Custom CLI setup
+
+          get_ip() {
+              ip -4 route get 1.1.1.1 2>/dev/null | awk '{print $7; exit}'
+          }
+
+          PS1='\[\e[32m\]\u@$(get_ip)\[\e[0m\]:\[\e[34m\]\w\[\e[0m\]\$ '
+
+          alias ll='ls -lah'
+          alias la='ls -A'
+          alias l='ls -CF'
+          alias ..='cd ..'
+          alias ...='cd ../..'
+          alias grep='grep --color=auto'
+          alias apk='doas apk'
+          alias update='doas apk update && doas apk upgrade'
+          alias i='doas apk add'
+          alias s='doas apk search'
+          alias h='htop'
+          alias ping='doas ping'
+          alias traceroute='doas traceroute'
+          alias ip='doas ip'
+          alias ss='doas ss'
+          alias tcpdump='doas tcpdump'
+
+          export HISTSIZE=5000
+          export HISTFILESIZE=10000
+          export HISTCONTROL=ignoredups:erasedups
+          shopt -s histappend
+
+    - name: Ensure .bash_profile sources .bashrc
+      ansible.builtin.lineinfile:
+        path: "/home/{{ lxc_user }}/.bash_profile"
+        owner: "{{ lxc_user }}"
+        group: "{{ lxc_user }}"
+        mode: "0644"
+        create: true
+        line: "[ -f ~/.bashrc ] && . ~/.bashrc"
+        state: present
